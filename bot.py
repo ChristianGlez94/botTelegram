@@ -15,12 +15,9 @@ from telegram.ext import (
 # Configuración de logging
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# Token del bot
-TOKEN = "7844167685:AAGUwuiHUp8egzYyfUcO7pv6XgQamjaCrHE"
-
-# URLs del backend
-LOGIN_URL = "https://siac.ensenada.gob.mx:8080/api/usuarios/login"
-REPORT_URL = "https://siac.ensenada.gob.mx:8080/api/reportes/crear_reporte"
+TOKEN = os.getenv("TOKEN")
+LOGIN_URL = os.getenv("LOGIN_URL")
+REPORT_URL = os.getenv("REPORT_URL")
 
 # Estados de la conversación
 CATEGORIA, REPORT_TYPE, USER_EMAIL, USER_PASSWORD, COORD_X, COORD_Y, DESCRIPCION, CALLE, COLONIA, IMAGEN = range(10)
