@@ -20,7 +20,7 @@ LOGIN_URL = os.getenv("LOGIN_URL")
 REPORT_URL = os.getenv("REPORT_URL")
 
 # Estados de la conversación
-CATEGORIA, REPORT_TYPE, USER_EMAIL, USER_PASSWORD, COORD_X, COORD_Y, DESCRIPCION, CALLE, COLONIA, IMAGEN = range(10)
+CATEGORIA, REPORT_TYPE, USER_EMAIL, USER_PASSWORD, COORDENADAS, DESCRIPCION, CALLE, COLONIA, IMAGEN = range(9)
 
 # Variables globales
 reporte_data = {}
@@ -33,7 +33,7 @@ default_user_id = None
 def obtener_token_por_defecto():
     global default_token, default_user_id
     try:
-        login_data = {"correo": "christiantronix@gmail.com", "contrasena": "123456789"}
+        login_data = {"correo": "callcenter@gob.mx", "contrasena": "123456789"}
         response = requests.post(LOGIN_URL, json=login_data)
         if response.status_code == 200:
             data = response.json()
@@ -47,13 +47,41 @@ def obtener_token_por_defecto():
 
 # Iniciar el bot
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Mensaje de bienvenida
+    welcome_message = (
+        "¡Bienvenido al Sistema de Reportes Ciudadanos! 🏙️\n\n"
+        "¿Qué es este servicio?\n"
+        "Es una aplicación enlazada al Sistema Integral de Atención Ciudadana (SIAC) del Gobierno Municipal, "
+        "mediante el cual los ciudadanos del Municipio de Ensenada pueden registrar sus peticiones de servicios, "
+        "tales como: Recolección de Basura, Reparación de Alumbrado Público, Semáforos, etc.\n\n"
+        "Mediante esta aplicación, las peticiones ciudadanas son gestionadas automáticamente a las Dependencias "
+        "Municipales correspondientes, lo que implica que el seguimiento de su solicitud será generado directamente "
+        "desde la Dependencia que tiene la capacidad de darle respuesta, y así dar solución a lo que el ciudadano nos solicita.\n\n"
+        "**Pasos para realizar un reporte:**\n"
+        "1. Selecciona la categoría del reporte.\n"
+        "2. Elige si deseas reportar como anónimo o con usuario.\n"
+        "3. Proporciona la ubicación del problema.\n"
+        "4. Describe el problema.\n"
+        "5. Proporciona detalles adicionales (calle, colonia).\n"
+        "6. Adjunta una imagen (opcional).\n\n"
+        "¡Comencemos! Selecciona la categoría del reporte:"
+    )
+
     # Mostrar botones de categorías
     keyboard = [
         [InlineKeyboardButton("Bacheo", callback_data="16")],
         [InlineKeyboardButton("Recolección de basura", callback_data="23")],
+        [InlineKeyboardButton("Alumbrado Público", callback_data="15")],
+        [InlineKeyboardButton("Animales", callback_data="2")],
+        [InlineKeyboardButton("Riesgo de estructuras", callback_data="10")],
+        [InlineKeyboardButton("Poda de Árboles", callback_data="22")],
+        
+        
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Selecciona la categoría del reporte:", reply_markup=reply_markup)
+
+    # Enviar mensaje de bienvenida y categorías
+    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     return CATEGORIA
 
 # Manejo de la selección de categoría
@@ -87,53 +115,75 @@ async def report_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reporte_data["idUsuariosReporte"] = user_id
         reporte_data["ciudadano"] = ""
         reporte_data["telefono"] = ""
-        await query.edit_message_text("Ingresa la coordenada X:")
-        return COORD_X
+
+        # Mostrar botón para seleccionar la ubicación manualmente
+        keyboard = [[InlineKeyboardButton("📍 Seleccionar Ubicación", callback_data="seleccionar_ubicacion")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text("Selecciona la ubicación para el reporte:", reply_markup=reply_markup)
+        return COORDENADAS
+
     elif choice == "con_usuario":
         await query.edit_message_text("Proporciona tu correo electrónico:")
         return USER_EMAIL
+
     else:
         await query.edit_message_text("Opción inválida. Selecciona una opción válida.")
         return REPORT_TYPE
 
-# Autenticación con correo y contraseña
+# Captura de correo electrónico
 async def user_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["correo"] = update.message.text
+    reporte_data["correo"] = update.message.text
     await update.message.reply_text("Proporciona tu contraseña:")
     return USER_PASSWORD
 
+# Captura de contraseña y autenticación
 async def user_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["contrasena"] = update.message.text
-    await update.message.reply_text("Autenticando...")
+    global user_token, user_id
+    reporte_data["contrasena"] = update.message.text
 
     try:
-        login_data = {"correo": context.user_data["correo"], "contrasena": context.user_data["contrasena"]}
+        login_data = {"correo": reporte_data["correo"], "contrasena": reporte_data["contrasena"]}
         response = requests.post(LOGIN_URL, json=login_data)
         if response.status_code == 200:
-            global user_token, user_id
             data = response.json()
             user_token = data.get("token")
             user_id = data.get("id")
             reporte_data["idUsuariosReporte"] = user_id
-            await update.message.reply_text("✅ Autenticación exitosa. Ingresa la coordenada X:")
-            return COORD_X
+            reporte_data["ciudadano"] = ""
+            reporte_data["telefono"] = ""
+
+            # Mostrar botón para seleccionar la ubicación manualmente
+            keyboard = [[InlineKeyboardButton("📍 Seleccionar Ubicación", callback_data="seleccionar_ubicacion")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_text("Selecciona la ubicación para el reporte:", reply_markup=reply_markup)
+            return COORDENADAS
         else:
-            await update.message.reply_text("❌ Error de autenticación. Verifica tu usuario y contraseña.")
+            await update.message.reply_text("⚠️ Error en la autenticación. Verifica tus credenciales.")
             return USER_EMAIL
     except Exception as e:
-        await update.message.reply_text(f"❌ Error en autenticación: {e}")
+        await update.message.reply_text("⚠️ Error inesperado. Intenta de nuevo.")
+        logging.error(f"Error en la autenticación: {e}")
         return USER_EMAIL
 
-# Captura de datos del reporte
-async def coord_x(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reporte_data["coordenada_x"] = update.message.text
-    await update.message.reply_text("Ingresa la coordenada Y:")
-    return COORD_Y
+# Captura de ubicación (cuando el usuario toca el botón "Seleccionar Ubicación")
+async def solicitar_ubicacion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("Por favor, selecciona manualmente la ubicación en el mapa y envíala aquí.")
+    return COORDENADAS
 
-async def coord_y(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reporte_data["coordenada_y"] = update.message.text
-    await update.message.reply_text("Describe el reporte:")
-    return DESCRIPCION
+async def recibir_ubicacion(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.location:
+        reporte_data["coordenada_x"] = str(update.message.location.latitude)
+        reporte_data["coordenada_y"] = str(update.message.location.longitude)
+        await update.message.reply_text("✅ Ubicación seleccionada correctamente.")
+        await update.message.reply_text("Describe el reporte:")
+        return DESCRIPCION
+    else:
+        await update.message.reply_text("⚠️ No se recibió una ubicación válida. Selecciona manualmente en el mapa y envíala aquí.")
+        return COORDENADAS
 
 async def descripcion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reporte_data["descripcion"] = update.message.text
@@ -147,7 +197,11 @@ async def calle(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def colonia(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reporte_data["coloniaNombre"] = update.message.text
-    await update.message.reply_text("Envía una imagen o escribe 'omitir':")
+    keyboard = [
+        [InlineKeyboardButton("Omitir imagen", callback_data="omitir_imagen")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Envía una imagen o selecciona omitir:", reply_markup=reply_markup)
     return IMAGEN
 
 # Envío del reporte con imagen opcional
@@ -158,53 +212,60 @@ async def imagen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Error: No hay un token de autenticación válido.")
         return ConversationHandler.END
 
-    form_data = {
-        "coordenada_x": (None, reporte_data["coordenada_x"]),
-        "coordenada_y": (None, reporte_data["coordenada_y"]),
-        "descripcion": (None, reporte_data["descripcion"]),
-        "coloniaNombre": (None, reporte_data["coloniaNombre"]),
-        "calleNombre": (None, reporte_data["calleNombre"]),
-        "ciudadano": (None, reporte_data["ciudadano"]),
-        "telefono": (None, reporte_data["telefono"]),
-        "idUsuariosReporte": (None, str(reporte_data["idUsuariosReporte"])),
-        "id_cat_reportes": (None, str(reporte_data["id_cat_reportes"])),
-        "notificacionCorreo": (None, "0"),
-    }
+    form_data = {key: (None, str(value)) for key, value in reporte_data.items()}
 
     try:
-        if update.message.text and update.message.text.lower() == "omitir":
-            await update.message.reply_text("📩 Enviando reporte sin imagen...")
+        # Si se presionó el botón "Omitir imagen"
+        if update.callback_query and update.callback_query.data == "omitir_imagen":
+            await update.callback_query.answer()  # Responde a la interacción del botón
+            await update.callback_query.message.reply_text("📩 Enviando reporte sin imagen...")
             headers = {"Authorization": f"Bearer {user_token}"}
             response = requests.post(REPORT_URL, files=form_data, headers=headers)
-        elif update.message.photo:
+
+        # Si se envió una foto
+        elif update.message and update.message.photo:
             file = await context.bot.get_file(update.message.photo[-1].file_id)
-            filepath = "imagen_reporte.jpg"  # Asegúrate de que el archivo tenga una extensión válida
+            filepath = "imagen_reporte.jpg"
             await file.download_to_drive(filepath)
 
             with open(filepath, "rb") as image_file:
-                # Combinar form_data y la imagen en un solo diccionario
-                files = form_data
-                files["imagen"] = (filepath, image_file, "image/jpeg")  # Especificar el tipo MIME
+                files = form_data.copy()
+                files["imagen"] = (filepath, image_file, "image/jpeg")
                 await update.message.reply_text("📩 Enviando reporte con imagen...")
 
                 headers = {"Authorization": f"Bearer {user_token}"}
                 response = requests.post(REPORT_URL, files=files, headers=headers)
+
+        # Si no se envió una opción válida
         else:
-            await update.message.reply_text("⚠️ Opción no válida. Envía una imagen o escribe 'omitir'.")
+            await update.message.reply_text("⚠️ Opción no válida. Envía una imagen o selecciona omitir.")
             return IMAGEN
 
-        # Verificar la respuesta del servidor
-        if response.status_code in [200, 201]:  # Aceptar tanto 200 como 201
+        # Manejo de la respuesta del servidor
+        if response.status_code in [200, 201]:
             response_data = response.json()
             if response_data.get("success", False):
-                await update.message.reply_text(f"✅ Reporte creado con éxito. ID: {response_data.get('idreporte', 'Desconocido')}")
+                if update.callback_query:
+                    await update.callback_query.message.reply_text(f"✅ Reporte creado con éxito. Clave: {response_data.get('idreporte', 'Desconocido')}")
+                else:
+                    await update.message.reply_text(f"✅ Reporte creado con éxito. ID: {response_data.get('idreporte', 'Desconocido')}")
             else:
-                await update.message.reply_text(f"⚠️ No se pudo enviar el reporte: {response_data.get('message', 'Error desconocido')}")
+                if update.callback_query:
+                    await update.callback_query.message.reply_text(f"⚠️ No se pudo enviar el reporte: {response_data.get('message', 'Error desconocido')}")
+                else:
+                    await update.message.reply_text(f"⚠️ No se pudo enviar el reporte: {response_data.get('message', 'Error desconocido')}")
         else:
-            await update.message.reply_text(f"⚠️ Error en el servidor: {response.status_code}, {response.text}")
+            if update.callback_query:
+                await update.callback_query.message.reply_text(f"⚠️ Error en el servidor: {response.status_code}, {response.text}")
+            else:
+                await update.message.reply_text(f"⚠️ Error en el servidor: {response.status_code}, {response.text}")
 
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Error inesperado: {e}")
+        # Manejo de errores
+        if update.callback_query:
+            await update.callback_query.message.reply_text(f"⚠️ Error inesperado: {e}")
+        else:
+            await update.message.reply_text(f"⚠️ Error inesperado: {e}")
         logging.error(f"Error en el envío del reporte: {e}")
 
     return ConversationHandler.END
@@ -221,12 +282,11 @@ def main():
             REPORT_TYPE: [CallbackQueryHandler(report_type)],
             USER_EMAIL: [MessageHandler(filters.TEXT, user_email)],
             USER_PASSWORD: [MessageHandler(filters.TEXT, user_password)],
-            COORD_X: [MessageHandler(filters.TEXT, coord_x)],
-            COORD_Y: [MessageHandler(filters.TEXT, coord_y)],
+            COORDENADAS: [CallbackQueryHandler(solicitar_ubicacion), MessageHandler(filters.LOCATION, recibir_ubicacion)],
             DESCRIPCION: [MessageHandler(filters.TEXT, descripcion)],
             CALLE: [MessageHandler(filters.TEXT, calle)],
             COLONIA: [MessageHandler(filters.TEXT, colonia)],
-            IMAGEN: [MessageHandler(filters.PHOTO | filters.TEXT, imagen)],
+            IMAGEN: [CallbackQueryHandler(imagen, pattern="^omitir_imagen$"), MessageHandler(filters.PHOTO, imagen)],
         },
         fallbacks=[],
     )
